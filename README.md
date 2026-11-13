@@ -18,7 +18,9 @@ Build an AI agent capable of:
 
 ## Current Status
 
-🚧 **M0 Phase**: Technical research and project initialization
+✅ **M0 Complete**: Project initialized, LangChain/LangGraph verified  
+✅ **M1 Complete**: Autonomous GPU agent with CUDA tools (pending API key test)  
+🔄 **Next**: M2 - Long-term research with checkpoint/resume
 
 ## Setup
 
@@ -39,34 +41,73 @@ cp .env.example .env
 # Edit .env with your actual API key
 ```
 
-4. Run initial tests:
+4. Run tests:
 ```bash
-python -m pytest tests/
+# Unit tests (no API key needed)
+python -m pytest tests/ -v
+
+# M1 demo (requires API key in .env)
+python scripts/demo_m1.py
 ```
+
+## Quick Start - M1 Demo
+
+Run an autonomous GPU experiment:
+
+```bash
+# 1. Configure your API key
+cp .env.example .env
+# Edit .env: LLM_API_KEY=your_actual_key
+
+# 2. Run the demo
+source venv/bin/activate  # or venv\Scripts\activate on Windows
+python scripts/demo_m1.py
+```
+
+The agent will autonomously:
+1. Detect your CUDA environment
+2. Generate a CUDA vector addition program
+3. Compile it for your GPU (GTX 1660 = sm_75)
+4. Execute and verify results
+5. Save experiment artifacts
+
+Results saved to: `data/experiments/experiment_<timestamp>.json`
 
 ## Development Milestones
 
-- [x] M0: Technical research and initialization
-- [ ] M1: Minimal GPU agent loop
-- [ ] M2: Long-term research with checkpoint/resume
-- [ ] M3: Real CVE reproduction
-- [ ] M4: PoC mutation and exploration
-- [ ] M5: Extended capabilities and productization
+- [x] **M0**: Technical research and initialization *(2026-11-13)*
+- [x] **M1**: Minimal GPU agent loop *(2026-11-13)*
+  - ✅ CUDA tools (detect, write, compile, execute)
+  - ✅ LangGraph ReAct agent
+  - ✅ Real GPU execution verified
+  - ⏸️ End-to-end LLM test (requires API key)
+- [ ] **M2**: Long-term research with checkpoint/resume
+- [ ] **M3**: Real CVE reproduction
+- [ ] **M4**: PoC mutation and exploration
+- [ ] **M5**: Extended capabilities and productization
 
 ## Project Structure
 
 ```
 GPUVulnAgent/
 ├── src/
-│   ├── agent/          # Agent core logic
-│   ├── tools/          # GPU research tools
-│   ├── execution/      # Sandbox and execution
-│   ├── storage/        # Persistence layer
-│   └── knowledge/      # Domain knowledge
-├── tests/              # Test suite
-├── data/               # Research artifacts
-├── docs/               # Documentation
-└── scripts/            # Utility scripts
+│   ├── agent/          # ✅ Simple autonomous agent (M1)
+│   ├── tools/          # ✅ CUDA tools (M1)
+│   ├── llm/            # ✅ LLM client (M0)
+│   ├── config.py       # ✅ Configuration (M0)
+│   ├── execution/      # (M2: Sandboxing)
+│   ├── storage/        # (M2: Persistence)
+│   └── knowledge/      # (M3: CVE intelligence)
+├── tests/              # ✅ Unit tests
+├── data/               # ✅ Research artifacts (gitignored)
+│   └── experiments/    # Saved experiment results
+├── docs/               # ✅ Documentation
+│   ├── M0_REPORT.md    # M0 completion report
+│   ├── M1_REPORT.md    # M1 completion report
+│   └── PROGRESS.md     # Development tracking
+└── scripts/            # ✅ Utility scripts
+    ├── verify_m0.py    # M0 tech stack verification
+    └── demo_m1.py      # M1 autonomous agent demo
 ```
 
 ## License
