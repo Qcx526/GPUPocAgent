@@ -16,6 +16,7 @@ from .target_adapter import TargetAdapter, TargetConfig
 from .input_mutation import InputMutationEngine, MutationRecord
 from .feedback_classifier import FeedbackClassifier, FeedbackStatistics, ExecutionFeedback
 from .generic_poc_agent import GenericPoCExplorationAgent
+from .task_config import ResearchTaskConfig, ResearchTaskConfigManager
 
 __all__ = [
     "CVEResearchRunner",
@@ -36,5 +37,7 @@ __all__ = [
     "FeedbackClassifier",
     "FeedbackStatistics",
     "ExecutionFeedback",
-    "GenericPoCExplorationAgent"
+    "GenericPoCExplorationAgent",
+    "ResearchTaskConfig",
+    "ResearchTaskConfigManager"
 ]
