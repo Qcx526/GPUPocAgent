@@ -1,55 +1,43 @@
+# Virtual environment
+venv/
+env/
+ENV/
+
 # Python
 __pycache__/
 *.py[cod]
 *$py.class
 *.so
 .Python
+
+# Test artifacts
+*.db
+test_*.db
+*_checkpoints.db
+interrupt_*.db
+cross_process_*.db
+
+# Build outputs
+*.exe
+*.o
+*.a
 build/
-develop-eggs/
 dist/
-downloads/
-eggs/
-.eggs/
-lib/
-lib64/
-parts/
-sdist/
-var/
-wheels/
-*.egg-info/
-.installed.cfg
-*.egg
 
-# Virtual Environment
-venv/
-ENV/
-env/
-
-# Environment variables
-.env
-.env.*
-!.env.example
+# Generated code
+data/generated_code/*.cu
+data/interrupt_test/*.cu
+cuda_experiment/
 
 # IDE
 .vscode/
 .idea/
 *.swp
 *.swo
-*~
 
-# Testing
-.pytest_cache/
-.coverage
-htmlcov/
-
-# Project specific
-data/research_tasks/*.db
-data/research_tasks/*.db-*
-data/poc_artifacts/*
-data/execution_logs/*
-experiments/
-temp/
+# Logs
 *.log
+*.txt
 
 # OS
 .DS_Store
