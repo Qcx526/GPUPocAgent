@@ -1,0 +1,12 @@
+{
+  "process": 1,
+  "task_id": "cross_process_test_b8359c3a",
+  "checkpoint_db": "cross_process_checkpoints.db",
+  "final_phase": "complete",
+  "steps_completed": 5,
+  "artifacts": [
+    "data\\generated_code\\cross_process_test_b8359c3a.cu",
+    "F:\\qcx\\code\\GPUPocAgent\\data\\generated_code\\cross_process_test_b8359c3a"
+  ],
+  "success": true
+}
