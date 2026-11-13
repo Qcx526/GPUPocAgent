@@ -1,0 +1,12 @@
+{
+  "process": 1,
+  "task_id": "controlled_int_281287bc",
+  "thread_id": "controlled_int_281287bc",
+  "checkpoint_db": "interrupt_controlled.db",
+  "interrupted_at_step": "compiled",
+  "artifacts": [
+    "data\\interrupt_test\\controlled_int_281287bc.cu",
+    "F:\\qcx\\code\\GPUPocAgent\\data\\interrupt_test\\controlled_int_281287bc"
+  ],
+  "next_step": "execute"
+}
