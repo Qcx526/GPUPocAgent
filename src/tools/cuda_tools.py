@@ -7,6 +7,12 @@ from pathlib import Path
 
 from langchain_core.tools import tool
 
+# Import workspace configuration
+try:
+    from src.config import workspace_root
+except ImportError:
+    from config import workspace_root
+
 
 @tool
 def detect_cuda_environment() -> Dict[str, Any]:
@@ -81,13 +87,15 @@ def detect_cuda_environment() -> Dict[str, Any]:
 
 
 @tool
-def write_cuda_source(code: str, filename: str, output_dir: str = ".") -> Dict[str, Any]:
+def write_cuda_source(code: str, filename: str, output_dir: str = None, task_id: str = "default_task", run_id: str = "auto") -> Dict[str, Any]:
     """Write CUDA source code to a file.
 
     Args:
         code: CUDA C/C++ source code
         filename: Output filename (should end with .cu or .cpp)
-        output_dir: Directory to write file (default: current directory)
+        output_dir: Directory to write file (default: workspace source dir for this task)
+        task_id: Research task identifier (used for workspace organization)
+        run_id: Run identifier (auto-generated if "auto")
 
     Returns:
         Dictionary with:
@@ -96,9 +104,17 @@ def write_cuda_source(code: str, filename: str, output_dir: str = ".") -> Dict[s
         - message: str
     """
     try:
-        output_path = Path(output_dir) / filename
-        output_path.parent.mkdir(parents=True, exist_ok=True)
+        if output_dir is None or output_dir == ".":
+            # Use workspace structure
+            if run_id == "auto":
+                import uuid
+                run_id = str(uuid.uuid4())[:8]
+            ws_root = workspace_root()
+            output_path = ws_root / "runs" / task_id / run_id / "source" / filename
+        else:
+            output_path = Path(output_dir) / filename
 
+        output_path.parent.mkdir(parents=True, exist_ok=True)
         output_path.write_text(code, encoding='utf-8')
 
         return {
