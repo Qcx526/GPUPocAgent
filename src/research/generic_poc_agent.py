@@ -46,10 +46,45 @@ class GenericPoCExplorationAgent:
 
         self.adapter = TargetAdapter(target_config)
         self.mutation_engine = InputMutationEngine(seed_file, self.workspace / "inputs")
-        self.feedback_stats = FeedbackStatistics()
+        self.feedback_stats = FeedbackStatistics()  # 全轮累计
 
         self.rounds_completed = 0
         self.total_executions = 0
+
+    def run_baseline_test(self) -> Dict[str, Any]:
+        """
+        执行未变异种子基线测试
+
+        必须成功，否则停止所有变异实验
+        """
+        print(f"\n[BASELINE] Testing unmodified seed: {self.seed_file}")
+
+        baseline_result = self.adapter.execute(
+            self.seed_file,
+            task_id=self.research_task,
+            run_id="baseline"
+        )
+
+        status = baseline_result.get("status")
+        if status == "STARTUP_FAILED":
+            print(f"  [ERROR] BASELINE_INVALID - Tool startup failed")
+            return {
+                "status": "BASELINE_INVALID",
+                "reason": "Tool startup failed",
+                "record": baseline_result
+            }
+
+        feedback = FeedbackClassifier.classify(baseline_result)
+        print(f"  Return code: {baseline_result.get('return_code')}")
+        print(f"  Classification: {feedback.classification}")
+        print(f"  Stdout length: {baseline_result.get('stdout_length')}")
+
+        # 基线可以是任何状态，只要工具启动成功
+        return {
+            "status": "OK",
+            "classification": feedback.classification,
+            "record": baseline_result
+        }
 
     def run_exploration_round(
         self,
@@ -58,7 +93,7 @@ class GenericPoCExplorationAgent:
         mutation_types: List[str] = None
     ) -> Dict[str, Any]:
         """
-        执行一轮探索
+        执行一轮探索（独立统计）
 
         Args:
             round_num: 轮次号
@@ -66,7 +101,7 @@ class GenericPoCExplorationAgent:
             mutation_types: 使用的变异类型
 
         Returns:
-            本轮结果摘要
+            本轮结果摘要（独立）
         """
         if mutation_types is None:
             mutation_types = ["bit_flip", "byte_flip", "truncate", "boundary"]
@@ -74,6 +109,9 @@ class GenericPoCExplorationAgent:
         print(f"\n[Round {round_num}] Starting exploration round")
         print(f"  Mutations: {mutation_types}")
         print(f"  Candidates to generate: {num_candidates}")
+
+        # 开始新轮统计
+        self.feedback_stats.start_round(round_num)
 
         candidates = []
         round_id = f"round_{round_num}"
@@ -123,12 +161,12 @@ class GenericPoCExplorationAgent:
 
             self.total_executions += 1
 
-        # 汇总本轮
-        round_summary = self.feedback_stats.get_summary()
-        round_results["summary"] = round_summary
+        # 获取该轮独立统计
+        round_summary = self.feedback_stats.get_round_summary(round_num)
+        round_results["round_statistics"] = round_summary
 
         print(f"  Completed {len(candidates)} executions")
-        print(f"  Classifications:")
+        print(f"  Classifications (Round {round_num} only):")
         for cls, count in round_summary.get("count", {}).items():
             print(f"    - {cls}: {count}")
 
@@ -145,21 +183,20 @@ class GenericPoCExplorationAgent:
 
     def analyze_round_results(self, round_num: int) -> Dict[str, Any]:
         """分析某一轮的结果，建议下一步策略"""
-        summary = self.feedback_stats.get_summary()
-        anomalies = self.feedback_stats.get_anomalies()
+        round_summary = self.feedback_stats.get_round_summary(round_num)
+        anomalies_in_round = self.feedback_stats.round_stats[round_num].get_anomalies()
 
         analysis = {
             "round": round_num,
-            "total_anomalies": len(anomalies),
-            "normal_successes": summary.get("count", {}).get("normal_success", 0),
-            "normal_rejections": summary.get("count", {}).get("normal_rejection", 0),
-            "timeouts": summary.get("count", {}).get("timeout", 0)
+            "total_executions": round_summary.get("total_executions"),
+            "total_anomalies": len(anomalies_in_round),
+            "classifications": round_summary.get("count", {})
         }
 
         # 策略建议
         recommendations = []
 
-        if len(anomalies) > 0:
+        if len(anomalies_in_round) > 0:
             recommendations.append(
                 "Anomalies detected - preserve these candidates for detailed analysis"
             )
@@ -169,14 +206,17 @@ class GenericPoCExplorationAgent:
                     "return_code": a.return_code,
                     "reason": a.reason
                 }
-                for a in anomalies
+                for a in anomalies_in_round
             ]
         else:
             recommendations.append(
-                "No anomalies in this round - increase mutation intensity or expand mutation types"
+                "No anomalies in this round - continue or adjust exploration strategy"
             )
 
-        if analysis["normal_successes"] > analysis["normal_rejections"]:
+        success_count = round_summary.get("count", {}).get("success", 0)
+        rejection_count = round_summary.get("count", {}).get("normal_rejection", 0)
+
+        if success_count > rejection_count:
             recommendations.append(
                 "Many inputs accepted by tool - focus on format-aware mutations"
             )
@@ -191,6 +231,8 @@ class GenericPoCExplorationAgent:
 
     def generate_exploration_report(self) -> Dict[str, Any]:
         """生成完整探索报告"""
+        cumulative = self.feedback_stats.get_cumulative_summary()
+
         report = {
             "research_task": self.research_task,
             "timestamp": datetime.now().isoformat(),
@@ -201,9 +243,9 @@ class GenericPoCExplorationAgent:
                 "target_version": self.target_config.tool_version,
                 "seed_file": str(self.seed_file)
             },
-            "feedback_statistics": self.feedback_stats.get_summary(),
+            "cumulative_statistics": cumulative,
             "candidates_workspace": str(self.workspace / "inputs" / "candidates"),
-            "execution_logs": self.adapter.get_log()[-min(10, len(self.adapter.get_log())):]  # 最后 10 个
+            "execution_logs": self.adapter.get_log()[-min(10, len(self.adapter.get_log())):]
         }
 
         return report
