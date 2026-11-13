@@ -1,0 +1,25 @@
+{
+  "task_name": "nvdisasm_cuda13_exploration",
+  "description": "Generic PoC exploration for nvdisasm (CUDA 13.4)",
+  "target": {
+    "tool_name": "nvdisasm",
+    "tool_version": "13.4",
+    "tool_path": "C:\\Program Files\\NVIDIA GPU Computing Toolkit\\CUDA\\v13.4\\bin\\nvdisasm.exe",
+    "input_mode": "file",
+    "command_template": "{tool_path} {input_file}",
+    "timeout_seconds": 30
+  },
+  "seed_file": "F:/qcx/code/GPUPocAgent/workspace/baseline_experiment/simple_kernel.cubin",
+  "workspace": "F:/qcx/code/GPUPocAgent/workspace/exploration/nvdisasm_cuda13",
+  "exploration": {
+    "rounds": 3,
+    "candidates_per_round": 20,
+    "mutation_types": [
+      "bit_flip",
+      "byte_flip",
+      "truncate",
+      "extend",
+      "boundary"
+    ]
+  }
+}
