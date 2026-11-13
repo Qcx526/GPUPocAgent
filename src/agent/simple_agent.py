@@ -92,18 +92,14 @@ def save_experiment_results(
     filename = f"experiment_{timestamp}.json"
     output_path = output_dir / filename
 
+    # intermediate_steps is now a list of dicts
     experiment_data = {
         "task": task,
         "timestamp": timestamp,
         "output": results.get("output"),
-        "intermediate_steps": [
-            {
-                "action": step[0].tool,
-                "action_input": step[0].tool_input,
-                "observation": str(step[1])[:500]  # Truncate long outputs
-            }
-            for step in results.get("intermediate_steps", [])
-        ]
+        "intermediate_steps": results.get("intermediate_steps", []),
+        "tool_calls_count": results.get("tool_calls_count", 0),
+        "total_messages": results.get("total_messages", 0)
     }
 
     output_path.write_text(json.dumps(experiment_data, indent=2), encoding='utf-8')
@@ -138,9 +134,33 @@ def run_simple_experiment(
     # Extract results from LangGraph message format
     final_message = messages["messages"][-1]
 
+    # Extract intermediate steps from message history
+    intermediate_steps = []
+    for msg in messages["messages"]:
+        # AIMessage with tool_calls
+        if hasattr(msg, 'tool_calls') and msg.tool_calls:
+            for tool_call in msg.tool_calls:
+                intermediate_steps.append({
+                    "type": "tool_call",
+                    "tool": tool_call.get("name", "unknown"),
+                    "args": tool_call.get("args", {}),
+                    "id": tool_call.get("id", "")
+                })
+        # ToolMessage with tool results
+        elif hasattr(msg, 'content') and hasattr(msg, 'name'):
+            if msg.__class__.__name__ == 'ToolMessage':
+                intermediate_steps.append({
+                    "type": "tool_result",
+                    "tool": getattr(msg, 'name', 'unknown'),
+                    "content": str(msg.content)[:1000],  # Limit length
+                    "tool_call_id": getattr(msg, 'tool_call_id', '')
+                })
+
     results = {
         "output": final_message.content if hasattr(final_message, 'content') else str(final_message),
-        "intermediate_steps": []  # LangGraph tracks this differently
+        "intermediate_steps": intermediate_steps,
+        "total_messages": len(messages["messages"]),
+        "tool_calls_count": sum(1 for s in intermediate_steps if s["type"] == "tool_call")
     }
 
     # Save results
@@ -149,6 +169,12 @@ def run_simple_experiment(
 
     # Add metadata
     results["results_saved_to"] = str(results_path)
-    results["all_messages"] = [str(m) for m in messages["messages"]]
+    results["all_messages"] = [
+        {
+            "type": msg.__class__.__name__,
+            "content": str(msg.content)[:500] if hasattr(msg, 'content') else str(msg)[:500]
+        }
+        for msg in messages["messages"]
+    ]
 
     return results
