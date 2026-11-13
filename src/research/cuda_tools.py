@@ -79,13 +79,16 @@ def detect_cuda_environments() -> Dict[str, CUDAEnvironment]:
 
 def validate_cubin(cubin_path: Path) -> Tuple[bool, str]:
     """
-    基础 CUBIN 文件完整性检查
+    基础 CUBIN 文件格式检查（初步识别，不代表有效 CUDA 二进制）
+
+    警告：此检查仅验证魔数，不保证文件完全有效。
+    完整验证需由 nvdisasm 或其他 CUDA 工具执行。
 
     Args:
         cubin_path: Path to .cubin file
 
     Returns:
-        Tuple of (is_valid, message)
+        Tuple of (looks_like_cuda_format, message)
     """
     if not cubin_path.exists():
         return False, f"File not found: {cubin_path}"
@@ -94,17 +97,17 @@ def validate_cubin(cubin_path: Path) -> Tuple[bool, str]:
 
     # CUBIN/FATBIN magic check
     if len(data) < 4:
-        return False, f"File too small ({len(data)} bytes)"
+        return False, f"File too small ({len(data)} bytes) - not CUDA binary format"
 
     # CUDA ELF magic: 7f 45 4c 46 (ELF header)
     if data[:4] == b'\x7fELF':
-        return True, f"Valid ELF format ({len(data)} bytes)"
+        return True, f"ELF format detected ({len(data)} bytes) - PRELIMINARY, requires tool validation"
 
     # FATBIN magic: 0xba55ed50 (little-endian)
     if len(data) >= 4 and int.from_bytes(data[:4], 'little') == 0xba55ed50:
-        return True, f"Valid FATBIN format ({len(data)} bytes)"
+        return True, f"FATBIN format detected ({len(data)} bytes) - PRELIMINARY, requires tool validation"
 
-    return False, f"Unrecognized format (first 4 bytes: {data[:4].hex()})"
+    return False, f"Unrecognized format (first 4 bytes: {data[:4].hex()}) - not recognized as CUDA binary"
 
 
 def execute_nvdisasm(
@@ -113,7 +116,7 @@ def execute_nvdisasm(
     timeout: int = 30
 ) -> Dict[str, Any]:
     """
-    以受控方式执行 nvdisasm
+    以受控方式执行 nvdisasm，完整保存所有证据
 
     Args:
         env: CUDA environment to use
@@ -121,21 +124,26 @@ def execute_nvdisasm(
         timeout: Execution timeout in seconds
 
     Returns:
-        Execution record dict
+        Execution record dict with complete evidence
     """
     is_valid, validation_msg = validate_cubin(input_file)
 
     if not is_valid:
         return {
-            "status": "VALIDATION_FAILED",
+            "status": "FORMAT_CHECK_FAILED",
             "validation_message": validation_msg,
             "return_code": None,
             "stdout": "",
-            "stderr": ""
+            "stderr": "",
+            "input_file": str(input_file),
+            "input_size": input_file.stat().st_size if input_file.exists() else None
         }
 
     # Calculate input hash
     input_sha256 = hashlib.sha256(input_file.read_bytes()).hexdigest()
+
+    # Get tool binary hash
+    tool_sha256 = hashlib.sha256(env.nvdisasm_path.read_bytes()).hexdigest()
 
     try:
         result = subprocess.run(
@@ -148,34 +156,43 @@ def execute_nvdisasm(
         return {
             "status": "EXECUTED",
             "cuda_version": env.cuda_version,
-            "tool": "nvdisasm",
+            "tool_path": str(env.nvdisasm_path),
+            "tool_binary_sha256": tool_sha256,
             "input_file": str(input_file),
             "input_size": input_file.stat().st_size,
             "input_sha256": input_sha256,
             "return_code": result.returncode,
             "stdout_length": len(result.stdout),
             "stderr_length": len(result.stderr),
-            "stdout_first_500": result.stdout[:500] if result.stdout else "",
-            "stderr_first_500": result.stderr[:500] if result.stderr else "",
             "stdout": result.stdout,
-            "stderr": result.stderr
+            "stderr": result.stderr,
+            "command": f'"{env.nvdisasm_path}" "{input_file}"',
+            "exit_status": "success" if result.returncode == 0 else f"non-zero ({result.returncode})"
         }
 
     except subprocess.TimeoutExpired:
         return {
             "status": "TIMEOUT",
+            "cuda_version": env.cuda_version,
+            "tool_path": str(env.nvdisasm_path),
             "timeout_seconds": timeout,
+            "input_file": str(input_file),
             "return_code": None,
             "stdout": "",
-            "stderr": ""
+            "stderr": f"Execution exceeded {timeout} seconds",
+            "exit_status": "timeout"
         }
     except Exception as e:
         return {
             "status": "ERROR",
+            "cuda_version": env.cuda_version,
+            "tool_path": str(env.nvdisasm_path),
             "error": str(e),
+            "input_file": str(input_file),
             "return_code": None,
             "stdout": "",
-            "stderr": ""
+            "stderr": str(e),
+            "exit_status": "error"
         }
 
 
