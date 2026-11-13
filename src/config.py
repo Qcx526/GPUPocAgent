@@ -18,6 +18,8 @@ class WorkspaceConfig(BaseSettings):
     llm_api_key: str
     llm_base_url: str = "https://api.deepseek.com"
     llm_model: str = "deepseek-flash"
+    llm_temperature: float = 0.7
+    llm_max_tokens: int = 4096
     tavily_api_key: Optional[str] = None
 
     # Execution settings
@@ -61,6 +63,18 @@ class WorkspaceConfig(BaseSettings):
     def get_artifact_index_path(self) -> Path:
         """Get absolute path for artifact index."""
         return self.get_state_directory() / "artifacts.db"
+
+    def validate_api_key(self) -> None:
+        """Validate that API key is configured.
+
+        Raises:
+            ValueError: If llm_api_key is not set or empty
+        """
+        if not self.llm_api_key or not self.llm_api_key.strip():
+            raise ValueError(
+                "llm_api_key is not configured. "
+                "Please set LLM_API_KEY environment variable or .env file"
+            )
 
 
 # Singleton instance
