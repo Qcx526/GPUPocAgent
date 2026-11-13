@@ -1,107 +1,123 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cmath>
-#include <cuda_runtime.h>
 
-// Simple one-thread-per-element vector addition kernel
-__global__ void vectorAdd(const float *a, const float *b, float *c, int n)
-{
-    int idx = blockIdx.x * blockDim.x + threadIdx.x;
-    if (idx < n) {
-        c[idx] = a[idx] + b[idx];
-    }
-}
+// ---------------------------------------------------------------------------
+// Vector addition: C[i] = A[i] + B[i]
+//   - Each thread computes one element
+//   - Grid-stride loop so the code works for any N
+//   - CUDA error checking on every API call
+// ---------------------------------------------------------------------------
 
 #define CUDA_CHECK(call)                                                      \
     do {                                                                      \
-        cudaError_t err = (call);                                             \
-        if (err != cudaSuccess) {                                             \
-            fprintf(stderr, "CUDA error at %s:%d -> %s\n", __FILE__, __LINE__, \
-                    cudaGetErrorString(err));                                 \
+        cudaError_t err__ = (call);                                           \
+        if (err__ != cudaSuccess) {                                           \
+            fprintf(stderr, "CUDA error at %s:%d -> %s\n", __FILE__,         \
+                    __LINE__, cudaGetErrorString(err__));                     \
             exit(EXIT_FAILURE);                                               \
         }                                                                     \
     } while (0)
 
-int main()
+__global__ void vectorAdd(const float * __restrict__ A,
+                          const float * __restrict__ B,
+                          float * __restrict__ C,
+                          int n)
 {
-    const int N = 1 << 20;                 // 1,048,576 elements
-    const size_t bytes = N * sizeof(float);
-    const int threadsPerBlock = 256;
-    const int blocksPerGrid = (N + threadsPerBlock - 1) / threadsPerBlock;
+    int idx = blockIdx.x * blockDim.x + threadIdx.x;
+    int stride = blockDim.x * gridDim.x;
 
-    printf("Vector addition: N = %d elements (%.2f MiB per array)\n",
-           N, bytes / (1024.0 * 1024.0));
-    printf("Launch config: %d blocks x %d threads\n", blocksPerGrid, threadsPerBlock);
+    for (int i = idx; i < n; i += stride) {
+        C[i] = A[i] + B[i];
+    }
+}
 
-    // ---- Host allocation (pinned for faster transfers) ----
-    float *h_a = nullptr, *h_b = nullptr, *h_c = nullptr;
-    CUDA_CHECK(cudaMallocHost((void **)&h_a, bytes));
-    CUDA_CHECK(cudaMallocHost((void **)&h_b, bytes));
-    CUDA_CHECK(cudaMallocHost((void **)&h_c, bytes));
-
-    for (int i = 0; i < N; ++i) {
-        h_a[i] = static_cast<float>(i) * 1.0f;
-        h_b[i] = static_cast<float>(i) * 2.0f;
+int main(int argc, char **argv)
+{
+    // Problem size (overridable from the command line)
+    int n = (argc > 1) ? atoi(argv[1]) : (1 << 20);
+    if (n <= 0) {
+        fprintf(stderr, "Vector size must be positive.\n");
+        return EXIT_FAILURE;
     }
 
-    // ---- Device allocation ----
-    float *d_a = nullptr, *d_b = nullptr, *d_c = nullptr;
-    CUDA_CHECK(cudaMalloc((void **)&d_a, bytes));
-    CUDA_CHECK(cudaMalloc((void **)&d_b, bytes));
-    CUDA_CHECK(cudaMalloc((void **)&d_c, bytes));
+    const size_t bytes = (size_t)n * sizeof(float);
 
-    // ---- H2D transfers ----
-    CUDA_CHECK(cudaMemcpy(d_a, h_a, bytes, cudaMemcpyHostToDevice));
-    CUDA_CHECK(cudaMemcpy(d_b, h_b, bytes, cudaMemcpyHostToDevice));
+    printf("Vector addition: N = %d  (%.2f MiB per array)\n", n,
+           (double)bytes / (1024.0 * 1024.0));
 
-    // ---- Kernel launch (timed) ----
+    // ---- Host allocations (pinned memory for faster transfers) -------------
+    float *h_A = nullptr, *h_B = nullptr, *h_C = nullptr;
+    CUDA_CHECK(cudaHostAlloc((void **)&h_A, bytes, cudaHostAllocDefault));
+    CUDA_CHECK(cudaHostAlloc((void **)&h_B, bytes, cudaHostAllocDefault));
+    CUDA_CHECK(cudaHostAlloc((void **)&h_C, bytes, cudaHostAllocDefault));
+
+    for (int i = 0; i < n; ++i) {
+        h_A[i] = 1.0f * i;
+        h_B[i] = 2.0f * i;
+    }
+
+    // ---- Device allocations ------------------------------------------------
+    float *d_A = nullptr, *d_B = nullptr, *d_C = nullptr;
+    CUDA_CHECK(cudaMalloc((void **)&d_A, bytes));
+    CUDA_CHECK(cudaMalloc((void **)&d_B, bytes));
+    CUDA_CHECK(cudaMalloc((void **)&d_C, bytes));
+
+    // ---- Events for timing host->device / kernel / device->host ------------
     cudaEvent_t start, stop;
     CUDA_CHECK(cudaEventCreate(&start));
     CUDA_CHECK(cudaEventCreate(&stop));
+
+    CUDA_CHECK(cudaMemcpy(d_A, h_A, bytes, cudaMemcpyHostToDevice));
+    CUDA_CHECK(cudaMemcpy(d_B, h_B, bytes, cudaMemcpyHostToDevice));
+
+    // ---- Launch configuration ---------------------------------------------
+    const int threadsPerBlock = 256;
+    int blocksPerGrid = (n + threadsPerBlock - 1) / threadsPerBlock;
+    const int maxBlocks = 65535;  // conservative limit for grid dimension
+    if (blocksPerGrid > maxBlocks) blocksPerGrid = maxBlocks;
+
+    printf("Launch: %d blocks x %d threads\n", blocksPerGrid, threadsPerBlock);
+
     CUDA_CHECK(cudaEventRecord(start));
-    vectorAdd<<<blocksPerGrid, threadsPerBlock>>>(d_a, d_b, d_c, N);
-    CUDA_CHECK(cudaGetLastError());        // catch launch errors
+    vectorAdd<<<blocksPerGrid, threadsPerBlock>>>(d_A, d_B, d_C, n);
+    CUDA_CHECK(cudaGetLastError());
     CUDA_CHECK(cudaEventRecord(stop));
     CUDA_CHECK(cudaEventSynchronize(stop));
 
-    float ms = 0.0f;
-    CUDA_CHECK(cudaEventElapsedTime(&ms, start, stop));
-    printf("Kernel execution time: %.4f ms\n", ms);
+    float kernelMs = 0.0f;
+    CUDA_CHECK(cudaEventElapsedTime(&kernelMs, start, stop));
 
-    // ---- D2H transfer ----
-    CUDA_CHECK(cudaMemcpy(h_c, d_c, bytes, cudaMemcpyDeviceToHost));
+    CUDA_CHECK(cudaMemcpy(h_C, d_C, bytes, cudaMemcpyDeviceToHost));
 
-    // ---- Verification on the host ----
-    int mismatches = 0;
-    double maxAbsErr = 0.0;
-    for (int i = 0; i < N; ++i) {
-        float expected = h_a[i] + h_b[i];
-        double err = fabs(static_cast<double>(h_c[i] - expected));
-        if (err > maxAbsErr) maxAbsErr = err;
-        if (err > 1e-5) {
-            if (mismatches < 5) {
-                printf("  MISMATCH at %d: got %f, expected %f\n", i, h_c[i], expected);
+    // ---- Verify ------------------------------------------------------------
+    int errors = 0;
+    for (int i = 0; i < n; ++i) {
+        float expected = h_A[i] + h_B[i];
+        if (fabsf(h_C[i] - expected) > 1e-5f * fmaxf(1.0f, fabsf(expected))) {
+            if (errors < 5) {
+                fprintf(stderr, "Mismatch at %d: got %f, expected %f\n",
+                        i, h_C[i], expected);
             }
-            ++mismatches;
+            ++errors;
         }
     }
 
-    printf("Max absolute error: %.6e\n", maxAbsErr);
-    if (mismatches == 0) {
-        printf("RESULT: PASS - all %d elements verified.\n", N);
-    } else {
-        printf("RESULT: FAIL - %d of %d elements mismatched.\n", mismatches, N);
-    }
+    printf("Kernel time: %.3f ms\n", kernelMs);
+    printf("Result: %s (%d mismatches out of %d elements)\n",
+           (errors == 0) ? "PASS" : "FAIL", errors, n);
+    printf("Sample: C[0]=%.1f  C[%d]=%.1f  C[%d]=%.1f\n",
+           h_C[0], n / 2, h_C[n / 2], n - 1, h_C[n - 1]);
 
-    // ---- Cleanup ----
+    // ---- Cleanup -----------------------------------------------------------
     CUDA_CHECK(cudaEventDestroy(start));
     CUDA_CHECK(cudaEventDestroy(stop));
-    CUDA_CHECK(cudaFree(d_a));
-    CUDA_CHECK(cudaFree(d_b));
-    CUDA_CHECK(cudaFree(d_c));
-    CUDA_CHECK(cudaFreeHost(h_a));
-    CUDA_CHECK(cudaFreeHost(h_b));
-    CUDA_CHECK(cudaFreeHost(h_c));
+    CUDA_CHECK(cudaFree(d_A));
+    CUDA_CHECK(cudaFree(d_B));
+    CUDA_CHECK(cudaFree(d_C));
+    CUDA_CHECK(cudaFreeHost(h_A));
+    CUDA_CHECK(cudaFreeHost(h_B));
+    CUDA_CHECK(cudaFreeHost(h_C));
 
-    return (mismatches == 0) ? EXIT_SUCCESS : EXIT_FAILURE;
+    return (errors == 0) ? EXIT_SUCCESS : EXIT_FAILURE;
 }
