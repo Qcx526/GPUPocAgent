@@ -1,124 +1,125 @@
-// Vector addition on GPU - CUDA experiment
-// Target: NVIDIA GeForce GTX 1660 (compute capability 7.5)
 #include <cstdio>
 #include <cstdlib>
 #include <cmath>
 #include <cuda_runtime.h>
 
-#define N (1 << 20)          // 1,048,576 elements
-#define THREADS 256
+#define CUDA_CHECK(call)                                                        \
+    do {                                                                        \
+        cudaError_t err = (call);                                               \
+        if (err != cudaSuccess) {                                               \
+            fprintf(stderr, "CUDA error at %s:%d -> %s\n", __FILE__, __LINE__,  \
+                    cudaGetErrorString(err));                                   \
+            exit(EXIT_FAILURE);                                                 \
+        }                                                                       \
+    } while (0)
 
-// GPU kernel: one thread per element
-__global__ void vectorAdd(const float *a, const float *b, float *c, int n) {
+__global__ void vecAdd(const float *a, const float *b, float *c, int n) {
     int idx = blockIdx.x * blockDim.x + threadIdx.x;
     if (idx < n) {
         c[idx] = a[idx] + b[idx];
     }
 }
 
-#define CUDA_CHECK(call)                                                       \
-    do {                                                                       \
-        cudaError_t err = (call);                                              \
-        if (err != cudaSuccess) {                                              \
-            fprintf(stderr, "CUDA error at %s:%d -> %s\n", __FILE__, __LINE__, \
-                    cudaGetErrorString(err));                                  \
-            exit(EXIT_FAILURE);                                                \
-        }                                                                      \
-    } while (0)
-
 int main() {
-    const size_t bytes = N * sizeof(float);
+    const int n = 1 << 20;                 // 1,048,576 elements
+    const size_t bytes = n * sizeof(float);
 
-    // Print device info
+    // Report device info
     int dev = 0;
     CUDA_CHECK(cudaGetDevice(&dev));
     cudaDeviceProp prop;
     CUDA_CHECK(cudaGetDeviceProperties(&prop, dev));
-    printf("Device %d: %s\n", dev, prop.name);
+    printf("Device: %s\n", prop.name);
     printf("Compute capability: %d.%d\n", prop.major, prop.minor);
-    printf("Total global memory: %.1f MiB\n", prop.totalGlobalMem / (1024.0 * 1024.0));
-    printf("Vector size N = %d floats (%.2f MiB each array)\n",
-           N, bytes / (1024.0 * 1024.0));
+    printf("Multiprocessors: %d\n", prop.multiProcessorCount);
+    printf("N = %d elements (%.2f MiB per array)\n\n", n, bytes / (1024.0 * 1024.0));
 
-    // Allocate host memory
+    // Host allocation (pageable)
     float *h_a = (float *)malloc(bytes);
     float *h_b = (float *)malloc(bytes);
     float *h_c = (float *)malloc(bytes);
-    if (!h_a || !h_b || !h_c) {
-        fprintf(stderr, "Host allocation failed\n");
+    float *h_ref = (float *)malloc(bytes);
+    if (!h_a || !h_b || !h_c || !h_ref) {
+        fprintf(stderr, "Host malloc failed\n");
         return EXIT_FAILURE;
     }
 
-    // Initialize host data
-    for (int i = 0; i < N; i++) {
-        h_a[i] = static_cast<float>(i) * 0.5f;
-        h_b[i] = static_cast<float>(i) * 0.25f;
+    for (int i = 0; i < n; ++i) {
+        h_a[i] = 1.0f * (i % 1024);
+        h_b[i] = 2.0f * (i % 512);
+        h_ref[i] = h_a[i] + h_b[i];
     }
 
-    // Allocate device memory
+    // Device allocation
     float *d_a = nullptr, *d_b = nullptr, *d_c = nullptr;
     CUDA_CHECK(cudaMalloc(&d_a, bytes));
     CUDA_CHECK(cudaMalloc(&d_b, bytes));
     CUDA_CHECK(cudaMalloc(&d_c, bytes));
 
-    // Copy inputs to device
     CUDA_CHECK(cudaMemcpy(d_a, h_a, bytes, cudaMemcpyHostToDevice));
     CUDA_CHECK(cudaMemcpy(d_b, h_b, bytes, cudaMemcpyHostToDevice));
+    CUDA_CHECK(cudaMemset(d_c, 0, bytes));
 
-    // Launch kernel
-    int blocks = (N + THREADS - 1) / THREADS;
-    printf("Launching kernel: %d blocks x %d threads\n", blocks, THREADS);
+    const int threadsPerBlock = 256;
+    const int blocks = (n + threadsPerBlock - 1) / threadsPerBlock;
+    printf("Launch config: %d blocks x %d threads = %d threads\n",
+           blocks, threadsPerBlock, blocks * threadsPerBlock);
 
-    // Timing with events
+    // Warm-up + timing
     cudaEvent_t start, stop;
     CUDA_CHECK(cudaEventCreate(&start));
     CUDA_CHECK(cudaEventCreate(&stop));
-    CUDA_CHECK(cudaEventRecord(start));
 
-    vectorAdd<<<blocks, THREADS>>>(d_a, d_b, d_c, N);
+    vecAdd<<<blocks, threadsPerBlock>>>(d_a, d_b, d_c, n);
     CUDA_CHECK(cudaGetLastError());
 
+    const int iters = 100;
+    CUDA_CHECK(cudaEventRecord(start));
+    for (int i = 0; i < iters; ++i) {
+        vecAdd<<<blocks, threadsPerBlock>>>(d_a, d_b, d_c, n);
+    }
     CUDA_CHECK(cudaEventRecord(stop));
     CUDA_CHECK(cudaEventSynchronize(stop));
+
     float ms = 0.0f;
     CUDA_CHECK(cudaEventElapsedTime(&ms, start, stop));
-    printf("Kernel execution time: %.4f ms\n", ms);
+    double avg_ms = ms / iters;
+    double gbps = (3.0 * bytes) / (avg_ms * 1e-3) / 1e9;
+    printf("Avg kernel time: %.4f ms  (~%.1f GB/s effective)\n", avg_ms, gbps);
 
-    // Copy result back
     CUDA_CHECK(cudaMemcpy(h_c, d_c, bytes, cudaMemcpyDeviceToHost));
 
-    // Verify results on CPU
+    // Verify
     int mismatches = 0;
-    for (int i = 0; i < N; i++) {
-        float expected = h_a[i] + h_b[i];
-        if (fabsf(h_c[i] - expected) > 1e-5f) {
+    float max_abs_err = 0.0f;
+    for (int i = 0; i < n; ++i) {
+        float err = fabsf(h_c[i] - h_ref[i]);
+        if (err > max_abs_err) max_abs_err = err;
+        if (err > 1e-5f) {
             if (mismatches < 5) {
-                printf("MISMATCH at index %d: got %f, expected %f\n",
-                       i, h_c[i], expected);
+                printf("MISMATCH at %d: got %f expected %f\n", i, h_c[i], h_ref[i]);
             }
-            mismatches++;
+            ++mismatches;
         }
     }
 
-    printf("Verification: %d mismatches out of %d elements\n", mismatches, N);
-    printf("Sample results: c[0]=%f, c[1]=%f, c[1000]=%f, c[N-1]=%f\n",
-           h_c[0], h_c[1], h_c[1000], h_c[N - 1]);
+    printf("\nVerification: %d / %d mismatches, max abs error = %g\n",
+           mismatches, n, max_abs_err);
+    printf("Sample: c[0]=%f (exp %f), c[12345]=%f (exp %f), c[%d]=%f (exp %f)\n",
+           h_c[0], h_ref[0], h_c[12345], h_ref[12345], n - 1, h_c[n - 1], h_ref[n - 1]);
 
     // Cleanup
+    CUDA_CHECK(cudaEventDestroy(start));
+    CUDA_CHECK(cudaEventDestroy(stop));
     CUDA_CHECK(cudaFree(d_a));
     CUDA_CHECK(cudaFree(d_b));
     CUDA_CHECK(cudaFree(d_c));
-    CUDA_CHECK(cudaEventDestroy(start));
-    CUDA_CHECK(cudaEventDestroy(stop));
-    free(h_a);
-    free(h_b);
-    free(h_c);
+    free(h_a); free(h_b); free(h_c); free(h_ref);
 
     if (mismatches == 0) {
-        printf("RESULT: SUCCESS - vector addition verified correct.\n");
+        printf("RESULT: PASS\n");
         return EXIT_SUCCESS;
-    } else {
-        printf("RESULT: FAILURE - incorrect results.\n");
-        return EXIT_FAILURE;
     }
+    printf("RESULT: FAIL\n");
+    return EXIT_FAILURE;
 }
