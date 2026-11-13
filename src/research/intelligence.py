@@ -91,53 +91,56 @@ def extract_nvidia_advisory_info(cve_id: str) -> Dict[str, Any]:
     """
     从 NVIDIA 官方公告提取 CVE 信息
 
-    已知公开公告：
-    - CVE-2024-53877: nvdisasm NULL pointer
-    - CVE-2024-53871: nvdisasm out-of-bounds read
-    - CVE-2024-53870: cuobjdump out-of-bounds read
-
     参考: https://nvidia.custhelp.com/app/answers/detail/a_id/5594
+    CUDA 历史版本: https://developer.nvidia.com/cuda-toolkit-archive
+
+    重要约束：
+    - 情报基于公开公告和文档搜索
+    - 某些版本可用性、精确修复版本、具体触发字段仍需进一步验证
+    - 不能在没有实际环境验证的情况下判定复现可行性
     """
 
     advisory_db = {
         "CVE-2024-53877": {
-            "title": "NVIDIA nvdisasm NULL Pointer Exception",
-            "component": "nvdisasm",
-            "type": "NULL pointer dereference",
-            "severity": "CVSS 5.5 (Medium)",
-            "affected_versions": [
-                "CUDA Toolkit 11.8.0 to 12.6.x"
+            "title": "NVIDIA nvdisasm Improper Input Validation",
+            "component": "nvdisasm (CUDA Toolkit tool)",
+            "type": "Improper input validation",
+            "severity": "CVSS 3.3 (Low)",
+            "source": "https://nvidia.custhelp.com/app/answers/detail/a_id/5594",
+            "affected_components": [
+                "nvdisasm in CUDA Toolkit"
             ],
-            "fixed_versions": [
-                "CUDA Toolkit 12.7.0"
+            "known_affected_versions": [
+                "CUDA 11.8 through 12.x (specific cutoff TBD)"
             ],
-            "description": "Processing a malformed CUBIN file causes NULL pointer exception"
+            "fixed_or_updated_versions": [
+                "CUDA 12.8 (requires verification)"
+            ],
+            "input_type": "Malformed ELF binary",
+            "description": "nvdisasm fails to properly validate input ELF/CUBIN files, potentially leading to improper behavior",
+            "known_limitations": [
+                "Exact triggering ELF structure not publicly disclosed",
+                "Precise affected version range requires tool version verification",
+                "Feasibility depends on access to vulnerable CUDA versions"
+            ]
         },
         "CVE-2024-53871": {
             "title": "NVIDIA nvdisasm Out-of-Bounds Read",
             "component": "nvdisasm",
             "type": "Out-of-bounds memory read",
-            "severity": "CVSS 5.3 (Medium)",
-            "affected_versions": [
-                "CUDA Toolkit 11.8.0 to 12.6.x"
-            ],
-            "fixed_versions": [
-                "CUDA Toolkit 12.7.0"
-            ],
-            "description": "Processing a malformed CUBIN file causes out-of-bounds read"
+            "severity": "CVSS TBD",
+            "source": "https://nvidia.custhelp.com/app/answers/detail/a_id/5594",
+            "affected_components": ["nvdisasm"],
+            "known_limitations": ["Requires public advisory verification"]
         },
         "CVE-2024-53870": {
             "title": "NVIDIA cuobjdump Out-of-Bounds Read",
             "component": "cuobjdump",
             "type": "Out-of-bounds memory read",
-            "severity": "CVSS 5.3 (Medium)",
-            "affected_versions": [
-                "CUDA Toolkit 11.8.0 to 12.6.x"
-            ],
-            "fixed_versions": [
-                "CUDA Toolkit 12.7.0"
-            ],
-            "description": "Processing a malformed ELF file causes out-of-bounds read"
+            "severity": "CVSS TBD",
+            "source": "https://nvidia.custhelp.com/app/answers/detail/a_id/5594",
+            "affected_components": ["cuobjdump"],
+            "known_limitations": ["Requires public advisory verification"]
         }
     }
 
