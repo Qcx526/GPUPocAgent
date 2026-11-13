@@ -1,7 +1,15 @@
+# Environment variables - MUST NOT be committed
+.env
+.env.*
+!.env.example
+.env.local
+.env.*.local
+
 # Virtual environment
 venv/
 env/
 ENV/
+.venv/
 
 # Python
 __pycache__/
@@ -9,13 +17,25 @@ __pycache__/
 *$py.class
 *.so
 .Python
+*.egg-info/
+dist/
+build/
 
-# Test artifacts
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*.sublime-*
+
+# Test artifacts and databases
 *.db
 test_*.db
 *_checkpoints.db
 interrupt_*.db
 cross_process_*.db
+*.sqlite
+*.sqlite3
 
 # Build outputs
 *.exe
@@ -24,20 +44,14 @@ cross_process_*.db
 build/
 dist/
 
-# Generated code
+# Generated code and artifacts
 data/generated_code/*.cu
-data/interrupt_test/*.cu
+data/generated_code/*.exe
 cuda_experiment/
-
-# IDE
-.vscode/
-.idea/
-*.swp
-*.swo
 
 # Logs
 *.log
-*.txt
+logs/
 
 # OS
 .DS_Store
