@@ -1,0 +1,25 @@
+{
+  "process": 1,
+  "task_id": "interrupt_test_f58a9557",
+  "thread_id": "interrupt_test_f58a9557",
+  "checkpoint_db": "interrupt_resume_checkpoints.db",
+  "tools_called": [
+    "detect_cuda_environment",
+    "ls",
+    "write_cuda_source",
+    "compile_cuda_code",
+    "execute_cuda_program",
+    "edit_file",
+    "read_file",
+    "ls",
+    "glob",
+    "write_cuda_source",
+    "compile_cuda_code",
+    "execute_cuda_program",
+    "ls",
+    "ls"
+  ],
+  "total_messages": 30,
+  "status": "INTERRUPTED_BEFORE_EXECUTION",
+  "next_step": "execute_cuda_program"
+}
