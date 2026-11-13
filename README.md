@@ -18,9 +18,60 @@ Build an AI agent capable of:
 
 ## Current Status
 
-✅ **M0 Complete**: Project initialized, LangChain/LangGraph verified  
-✅ **M1 Complete**: Autonomous GPU agent with CUDA tools (pending API key test)  
-🔄 **Next**: M2 - Long-term research with checkpoint/resume
+### ✅ M0 Complete
+- Project structure initialized
+- LangChain + LangGraph + Deep Agents verified
+
+### ✅ M1 Complete
+- Autonomous GPU agent framework
+- CUDA tools integrated (detect, compile, execute)
+- M1 offline validator with real experiment records
+
+### 🔄 M2 In Progress (BLOCKED)
+**Framework Complete**:
+- ✓ Deep Agents integration with CUDA tools
+- ✓ SQLite Checkpointer implementation
+- ✓ ArtifactStore design (SHA256, provenance)
+- ✓ Real two-process test harness created
+
+**Blocked**:
+- ✗ API quota exhausted (token-plan limit)
+- ✗ Cannot run LLM-dependent verification
+- ✗ Awaiting API recovery or provider switch
+
+**Previous false claims corrected**:
+- ✗ "10/10 acceptance passed" — fake tests removed
+- ✗ "Dual-process interrupt/resume verified" — was single-process function calls
+- ✗ "No duplicate operations" — not verified
+
+**Honest Status**: Framework ready, verification blocked by API
+
+### ⏳ M3 Queued (Post-M2)
+- Real NVIDIA GPU CVE reproduction
+- PoC generation and mutation
+- Evidence-driven verification
+
+## Important Notes
+
+### API Configuration
+Currently using Qwen token-plan API. When quota is exhausted:
+```bash
+# Option 1: Reset token-plan quota
+# Option 2: Switch to different provider (edit .env, update LLMCLIENT)
+# Option 3: Use personal OpenAI API key
+```
+
+### Test Status
+- ✅ CUDA tool tests: Pass (no API needed)
+- ✅ Deep Agents integration: Verified
+- ⏸️ Cross-process resume: Blocked by API quota
+- See `scripts/real_process1_p1.py` and `scripts/real_process2_p2.py` for real tests
+
+### Documentation
+- `docs/M0_COMPLETION.md` — M0 summary
+- `docs/M1_FINAL_ACCEPTANCE.md` — M1 verified results
+- `docs/M2_HONEST_BLOCKER_REPORT.md` — M2 real status and blockers
+- `docs/ARCHITECTURE.md` — System design
 
 ## Setup
 
