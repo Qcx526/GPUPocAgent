@@ -5,6 +5,10 @@
 .env.local
 .env.*.local
 
+# Workspace and run artifacts - everything ignored
+workspace/
+runs/
+
 # Virtual environment
 venv/
 env/
@@ -37,22 +41,39 @@ cross_process_*.db
 *.sqlite
 *.sqlite3
 
-# Build outputs
+# Build outputs (also in workspace/)
 *.exe
 *.o
 *.a
+*.obj
+*.lib
+*.dll
+*.so
 build/
 dist/
 
-# Generated code and artifacts
-data/generated_code/*.cu
-data/generated_code/*.exe
-cuda_experiment/
+# Generated code (also in workspace/)
+*.cu
+*.cu~
+*.ptx
+*.cubin
 
-# Logs
+# Logs (also in workspace/)
 *.log
 logs/
 
 # OS
 .DS_Store
 Thumbs.db
+
+# Legacy root directory artifacts (for cleanup)
+vector_add.exe
+vector_add.cu
+vector_add_*.exe
+cross_process_*.exe
+controlled_int_*.exe
+data/generated_code/*.exe
+data/interrupt_test/*.exe
+cuda_experiment/
+process1_metadata.json
+

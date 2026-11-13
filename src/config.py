@@ -1,80 +1,100 @@
-"""Configuration management for GPUVulnAgent"""
+"""
+Project-wide path and configuration management.
+All paths must be absolute and resolved from project root.
+"""
 
 import os
 from pathlib import Path
 from typing import Optional
+from pydantic_settings import BaseSettings
+from pydantic import field_validator
 
-from pydantic_settings import BaseSettings, SettingsConfigDict
 
+class WorkspaceConfig(BaseSettings):
+    """Unified workspace and path configuration."""
 
-class Settings(BaseSettings):
-    """Application settings loaded from environment variables"""
-
-    model_config = SettingsConfigDict(
-        env_file=".env",
-        env_file_encoding="utf-8",
-        case_sensitive=False,
-        extra="ignore"
-    )
-
-    # LLM Configuration
+    # API Configuration
     llm_api_key: str
-    llm_base_url: str = "https://token-plan.maas.qianwenaiapi.com/compatible-mode/v1"
-    llm_model: str = "deepseek-v4.1-flash-1017"
-    llm_temperature: float = 0.0
-    llm_max_tokens: Optional[int] = None
-
-    # Optional APIs
+    llm_base_url: str = "https://api.deepseek.com"
+    llm_model: str = "deepseek-flash"
     tavily_api_key: Optional[str] = None
 
-    # Execution Configuration
+    # Execution settings
     execution_timeout: int = 300
     max_retry_attempts: int = 3
+    debug: bool = False
 
-    # Project Paths
-    @property
-    def project_root(self) -> Path:
-        return Path(__file__).parent.parent
+    # Paths (derived from project root)
+    project_root: Path = Path(__file__).parent.parent.parent
+    workspace_root: Optional[Path] = None
 
-    @property
-    def data_dir(self) -> Path:
-        return self.project_root / "data"
+    @field_validator("workspace_root", mode="before")
+    @classmethod
+    def set_workspace_root(cls, v):
+        if v is None:
+            return Path(__file__).parent.parent.parent / "workspace"
+        return Path(v)
 
-    @property
-    def research_tasks_dir(self) -> Path:
-        return self.data_dir / "research_tasks"
+    class Config:
+        env_file = ".env"
+        env_file_encoding = "utf-8"
+        case_sensitive = False
 
-    @property
-    def poc_artifacts_dir(self) -> Path:
-        return self.data_dir / "poc_artifacts"
+    def get_run_directory(self, task_id: str, run_id: str) -> Path:
+        """Get absolute path for a specific run."""
+        run_dir = self.workspace_root / "runs" / task_id / run_id
+        run_dir.mkdir(parents=True, exist_ok=True)
+        return run_dir
 
-    @property
-    def execution_logs_dir(self) -> Path:
-        return self.data_dir / "execution_logs"
+    def get_state_directory(self) -> Path:
+        """Get absolute path for state storage."""
+        state_dir = self.workspace_root / "state"
+        state_dir.mkdir(parents=True, exist_ok=True)
+        return state_dir
 
-    def validate_api_key(self) -> None:
-        """Validate that required API keys are configured"""
-        if not self.llm_api_key or self.llm_api_key == "your_api_key_here":
-            raise ValueError(
-                "LLM_API_KEY not configured. Please set it in .env file. "
-                "Copy .env.example to .env and add your actual API key."
-            )
+    def get_checkpoint_db_path(self) -> Path:
+        """Get absolute path for checkpoint database."""
+        return self.get_state_directory() / "checkpoints.db"
 
-
-def load_settings() -> Settings:
-    """Load and validate settings"""
-    settings = Settings()
-    settings.validate_api_key()
-    return settings
-
-
-# Global settings instance (lazy loaded)
-_settings: Optional[Settings] = None
+    def get_artifact_index_path(self) -> Path:
+        """Get absolute path for artifact index."""
+        return self.get_state_directory() / "artifacts.db"
 
 
-def get_settings() -> Settings:
-    """Get global settings instance"""
-    global _settings
-    if _settings is None:
-        _settings = load_settings()
-    return _settings
+# Singleton instance
+_config: Optional[WorkspaceConfig] = None
+
+
+def get_config() -> WorkspaceConfig:
+    """Load or retrieve cached configuration."""
+    global _config
+    if _config is None:
+        _config = WorkspaceConfig()
+    return _config
+
+
+def reset_config():
+    """Reset cached configuration (mainly for testing)."""
+    global _config
+    _config = None
+
+
+# Convenience exports
+def project_root() -> Path:
+    return get_config().project_root
+
+
+def workspace_root() -> Path:
+    return get_config().workspace_root
+
+
+def run_directory(task_id: str, run_id: str) -> Path:
+    return get_config().get_run_directory(task_id, run_id)
+
+
+def checkpoint_db_path() -> Path:
+    return get_config().get_checkpoint_db_path()
+
+
+def artifact_index_path() -> Path:
+    return get_config().get_artifact_index_path()
