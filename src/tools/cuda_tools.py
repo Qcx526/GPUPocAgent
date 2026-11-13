@@ -87,7 +87,7 @@ def detect_cuda_environment() -> Dict[str, Any]:
 
 
 @tool
-def write_cuda_source(code: str, filename: str, output_dir: str = None, task_id: str = "default_task", run_id: str = "auto") -> Dict[str, Any]:
+def write_cuda_source(code: str, filename: str, output_dir: str = None, task_id: str = "default_task", run_id: str = None) -> Dict[str, Any]:
     """Write CUDA source code to a file.
 
     Args:
@@ -95,18 +95,19 @@ def write_cuda_source(code: str, filename: str, output_dir: str = None, task_id:
         filename: Output filename (should end with .cu or .cpp)
         output_dir: Directory to write file (default: workspace source dir for this task)
         task_id: Research task identifier (used for workspace organization)
-        run_id: Run identifier (auto-generated if "auto")
+        run_id: Run identifier (required when using workspace structure)
 
     Returns:
         Dictionary with:
         - success: bool
         - file_path: str (absolute path)
         - message: str
+        - run_id: str (if auto-generated)
     """
     try:
         if output_dir is None or output_dir == ".":
             # Use workspace structure
-            if run_id == "auto":
+            if run_id is None:
                 import uuid
                 run_id = str(uuid.uuid4())[:8]
             ws_root = workspace_root()
@@ -117,11 +118,14 @@ def write_cuda_source(code: str, filename: str, output_dir: str = None, task_id:
         output_path.parent.mkdir(parents=True, exist_ok=True)
         output_path.write_text(code, encoding='utf-8')
 
-        return {
+        result = {
             "success": True,
             "file_path": str(output_path.absolute()),
             "message": f"Successfully wrote {len(code)} bytes to {filename}"
         }
+        if run_id:
+            result["run_id"] = run_id
+        return result
     except Exception as e:
         return {
             "success": False,
@@ -135,7 +139,9 @@ def compile_cuda_code(
     source_file: str,
     output_file: str = "output",
     compute_capability: str = "75",
-    extra_flags: Optional[str] = None
+    extra_flags: Optional[str] = None,
+    task_id: str = None,
+    run_id: str = None
 ) -> Dict[str, Any]:
     """Compile CUDA source code with nvcc.
 
@@ -144,6 +150,8 @@ def compile_cuda_code(
         output_file: Output executable name (without extension)
         compute_capability: GPU compute capability (default: 75 for GTX 1660)
         extra_flags: Additional compiler flags (optional)
+        task_id: Research task identifier (used to resolve output in run directory)
+        run_id: Run identifier (used to resolve output in run directory)
 
     Returns:
         Dictionary with:
@@ -154,12 +162,22 @@ def compile_cuda_code(
         - return_code: int
     """
     try:
+        # Resolve output path
+        if task_id and run_id:
+            from src.config import workspace_root
+            ws_root = workspace_root()
+            output_dir = ws_root / "runs" / task_id / run_id / "build"
+            output_dir.mkdir(parents=True, exist_ok=True)
+            final_output = str(output_dir / output_file)
+        else:
+            final_output = output_file
+
         # Build nvcc command
         cmd = [
             "nvcc",
             f"-arch=sm_{compute_capability}",
             source_file,
-            "-o", output_file
+            "-o", final_output
         ]
 
         if extra_flags:
@@ -174,7 +192,7 @@ def compile_cuda_code(
         )
 
         success = proc.returncode == 0
-        output_path = str(Path(output_file).absolute()) if success else None
+        output_path = str(Path(final_output).absolute()) if success else None
 
         return {
             "success": success,
@@ -209,7 +227,9 @@ def compile_cuda_code(
 def execute_cuda_program(
     executable_path: str,
     timeout_seconds: int = 10,
-    working_dir: Optional[str] = None
+    working_dir: Optional[str] = None,
+    task_id: str = None,
+    run_id: str = None
 ) -> Dict[str, Any]:
     """Execute a compiled CUDA program.
 
@@ -217,6 +237,8 @@ def execute_cuda_program(
         executable_path: Path to executable
         timeout_seconds: Execution timeout (default: 10)
         working_dir: Working directory (default: current directory)
+        task_id: Research task identifier (used to save logs in run directory)
+        run_id: Run identifier (used to save logs in run directory)
 
     Returns:
         Dictionary with:
@@ -225,6 +247,7 @@ def execute_cuda_program(
         - stderr: str
         - return_code: int
         - timed_out: bool
+        - log_path: str or None (if task_id and run_id provided)
     """
     try:
         proc = subprocess.run(
@@ -235,7 +258,7 @@ def execute_cuda_program(
             cwd=working_dir
         )
 
-        return {
+        result = {
             "success": proc.returncode == 0,
             "stdout": proc.stdout,
             "stderr": proc.stderr,
@@ -243,22 +266,73 @@ def execute_cuda_program(
             "timed_out": False
         }
 
+        # Save logs to run directory if task_id and run_id provided
+        if task_id and run_id:
+            from src.config import workspace_root
+            from datetime import datetime
+            ws_root = workspace_root()
+            logs_dir = ws_root / "runs" / task_id / run_id / "logs"
+            logs_dir.mkdir(parents=True, exist_ok=True)
+
+            log_file = logs_dir / f"execution_{datetime.now().strftime('%Y%m%d_%H%M%S')}.log"
+            log_content = f"Executable: {executable_path}\n"
+            log_content += f"Return code: {proc.returncode}\n"
+            log_content += f"Timeout: {timeout_seconds}s\n"
+            log_content += f"\n=== STDOUT ===\n{proc.stdout}\n"
+            log_content += f"\n=== STDERR ===\n{proc.stderr}\n"
+
+            log_file.write_text(log_content, encoding='utf-8')
+            result["log_path"] = str(log_file.absolute())
+
+        return result
+
     except subprocess.TimeoutExpired as e:
-        return {
+        result = {
             "success": False,
             "stdout": e.stdout.decode() if e.stdout else "",
             "stderr": e.stderr.decode() if e.stderr else "",
             "return_code": -1,
             "timed_out": True
         }
+
+        if task_id and run_id:
+            from src.config import workspace_root
+            from datetime import datetime
+            ws_root = workspace_root()
+            logs_dir = ws_root / "runs" / task_id / run_id / "logs"
+            logs_dir.mkdir(parents=True, exist_ok=True)
+
+            log_file = logs_dir / f"execution_timeout_{datetime.now().strftime('%Y%m%d_%H%M%S')}.log"
+            log_content = f"Executable: {executable_path}\n"
+            log_content += f"TIMEOUT: {timeout_seconds}s exceeded\n"
+            log_content += f"\n=== STDOUT (partial) ===\n{result['stdout']}\n"
+            log_content += f"\n=== STDERR (partial) ===\n{result['stderr']}\n"
+
+            log_file.write_text(log_content, encoding='utf-8')
+            result["log_path"] = str(log_file.absolute())
+
+        return result
     except Exception as e:
-        return {
+        result = {
             "success": False,
             "stdout": "",
             "stderr": f"Error executing program: {e}",
             "return_code": -1,
             "timed_out": False
         }
+
+        if task_id and run_id:
+            from src.config import workspace_root
+            from datetime import datetime
+            ws_root = workspace_root()
+            logs_dir = ws_root / "runs" / task_id / run_id / "logs"
+            logs_dir.mkdir(parents=True, exist_ok=True)
+
+            log_file = logs_dir / f"execution_error_{datetime.now().strftime('%Y%m%d_%H%M%S')}.log"
+            log_file.write_text(result["stderr"], encoding='utf-8')
+            result["log_path"] = str(log_file.absolute())
+
+        return result
 
 
 # Export all tools

@@ -1,0 +1,58 @@
+P3: GPUPocAgent 历史产物清理与规范化迁移
+=============================================================================
+
+清理日期: 2026-11-13
+
+1. 质量评估与分类
+
+  (1) 高质量代码库 -> examples/
+    - cuda_experiment/vector_add.cu
+      SHA256: 3df3feec063b4e61331019e4bace410e24dd0832bad4fbdd3fbf329782d02452
+      大小:   5950 字节
+      特性:   设备检测、错误检查、性能测量、完整验证
+      评价:   生产级参考实现，保留
+
+  (2) 临时生成代码 -> 从 Git 移除
+    - data/generated_code/cross_process_test_60d77cef.cu
+    - data/generated_code/cross_process_test_b8359c3a.cu
+    - data/generated_code/test_checkpoint_c85c908b.cu
+    - data/generated_code/test_checkpoint_e3235e93.cu
+    - data/interrupt_test/controlled_int_0ec847e3.cu
+    - data/interrupt_test/controlled_int_281287bc.cu
+      评价:   测试和研究过程中生成的中间产物，不纳入源代码
+
+2. 迁移步骤
+
+  [DONE] 创建 examples/ 目录结构
+  [DONE] 复制 vector_add.cu 到 examples/vector_add.cu
+  [DONE] 验证 SHA256 完整性（复制前后一致）
+  [DONE] 创建 examples/README.md 说明文档
+  [DONE] 从 Git 索引移除旧产物文件 (git rm --cached)
+
+3. .gitignore 规则
+
+  已有规则确保：
+  - *.cu 文件不被提交（除了 examples/ 下的参考实现）
+  - *.db 数据库不被提交
+  - workspace/ 目录下的运行产物不被提交
+  - build/ 编译产物不被提交
+
+4. 文件定位确认
+
+  examples/vector_add.cu
+    新路径: examples/vector_add.cu
+    SHA256: 3df3feec063b4e61331019e4bace410e24dd0832bad4fbdd3fbf329782d02452
+    状态:   已 git add，待提交
+
+  data/generated_code/*
+  data/interrupt_test/*
+    状态:   已从 Git 移除，本地副本保留，.gitignore 已覆盖
+
+5. 后续处理
+
+  - 本次 commit 将移除上述 7 个文件的 Git 跟踪
+  - examples/vector_add.cu 作为正式参考代码提交
+  - workspace/ 目录继续保持完全隔离（不在 Git 中）
+  - 新实验产物仅存储在 workspace/runs/<task_id>/<run_id>/ 中
+
+=============================================================================

@@ -4,6 +4,7 @@ All paths must be absolute and resolved from project root.
 """
 
 import os
+import uuid
 from pathlib import Path
 from typing import Optional
 from pydantic_settings import BaseSettings
@@ -25,14 +26,15 @@ class WorkspaceConfig(BaseSettings):
     debug: bool = False
 
     # Paths (derived from project root)
-    project_root: Path = Path(__file__).parent.parent.parent
+    # src/config.py -> src (parent) -> GPUPocAgent (parent.parent)
+    project_root: Path = Path(__file__).parent.parent
     workspace_root: Optional[Path] = None
 
     @field_validator("workspace_root", mode="before")
     @classmethod
     def set_workspace_root(cls, v):
         if v is None:
-            return Path(__file__).parent.parent.parent / "workspace"
+            return Path(__file__).parent.parent / "workspace"
         return Path(v)
 
     class Config:
@@ -98,3 +100,17 @@ def checkpoint_db_path() -> Path:
 
 def artifact_index_path() -> Path:
     return get_config().get_artifact_index_path()
+
+
+def generate_run_id() -> str:
+    """Generate a deterministic but unique run ID for a research task.
+
+    Returns:
+        A 12-character hex string (first 12 chars of UUID4).
+    """
+    return str(uuid.uuid4())[:12]
+
+
+# Backward compatibility aliases
+Settings = WorkspaceConfig  # Old name → new name
+get_settings = get_config   # Old function → new function
